@@ -22,38 +22,21 @@ typedef enum PType{
 typedef struct pval{
     PType type;
     void* value;
-    pval* next;
+    struct pval* next;
     bool is_end;
 } pval;
 
-//function calls are ordered on a stack
-typedef struct CallStack{
-    OpCall base[65536];
-    int top;
-} CallStack;
-
-//every layer of the call stack should be a function and its parameters
-//but I don't know what function it would be for or what parameters it would have
-//keep it simple for now, start with math operators
-//every math operator returns an int and takes three int pointers
-typedef struct OpCall{
-    int (*op)(int, int, int);
-    int *operandA;
-    int *operandB;
-    int *out;
-} OpCall;
-
-
 int add(pval* list, pval* result){
 
-    int* sum = malloc(sizeof int);
+    int* sum = malloc(sizeof(int));
     while(list->is_end == false){
         int* operand = list->value;
         *sum += *sum + *operand;
         list = list->next;
     }
 
-    result = pval_cons(sum, NUM);
+    //need to think about how this should work
+    //result = pval_new_num(NULL, sum);
 
     return 0;
 }
@@ -76,10 +59,10 @@ int divide(int* operandA, int* operandB, int* out){
 int compare();
 
 //make a new pval meant to serve as the start of a list
-pval* pval_new(){
+pval* pval_new_header(){
     pval* out = malloc(sizeof(pval));
     if(out){
-        out->type = PType.START;
+        out->type = START;
         out->value = NULL;
         out->next = NULL;
         out->is_end = true;
@@ -87,16 +70,49 @@ pval* pval_new(){
     return out;
 }
 
-// pval* pval_new (PType ty) {
-//     pval* out = malloc(sizeof(pval));
-//     assert(out);
-//     out->type = ty;
-//     out->value = NULL;
-//     out->next = NULL;
-//     out->is_end = true;
-//     return out;
-// }
+pval* pval_new_num(pval* parent, int val){
+    pval* out = malloc(sizeof(pval));
+    if(out){
+        int* v = calloc(1, sizeof(int));
+        if(v){
+            *v = val;
+            out->value = v;
+        }
+        else{
+            free(out);
+            return NULL;
+        }
+        out->type = NUM;
+        out->next = NULL;
+        out->is_end = true;
+        parent->next = out;
+        parent->is_end = false;
+    }
 
+    return out;
+}
+
+pval* pval_new_bool(pval* parent, bool val){
+    pval* out = malloc(sizeof(pval));
+    if(out){
+        bool* b = calloc(1, sizeof(bool));
+        if(out->value){
+            *b = val;
+            out->value = b;
+        }
+        else{
+            free(out);
+            return NULL;
+        }
+        out->type = BOOL;
+        out->next = NULL;
+        out->is_end = true;
+        parent->next = out;
+        parent->is_end = false;
+    }
+
+    return out;
+}
 //constructor is tricky because we need to allocate a void*
 //we don't know how big the thing needs to be
 //we do get given a type though, could just malloc depending on if statement
@@ -113,16 +129,38 @@ pval* pval_new(){
 //Again, I can just make a constructor for each type. It would make the code more 
 //legible too. I wouldn't have to pass PType anymore because I could just bake the type
 //into the constructor, so overall parameter count would decrease.
-pval* pval_string_cons(pval* tl, char* str, int len){
+pval* pval_new_string(pval* parent, char* str, int len){
     pval* out = malloc(sizeof(pval));
-    assert(out);
-    char* val = malloc(len);
-    strlcpy(val, str, len);
+    if(out){
+        out->value = calloc(len+1, sizeof(char));
+        if(out->value){
+            strlcpy(out->value, str, len);
+        }
+        else{
+            free(out);
+            return NULL;
+        }
+        out->type = STR;
+        out->next = NULL;
+        out->is_end = true;
+        parent->next = out;
+        parent->is_end = false;
+    }
 
-    out->type = STR;
-    out->value = val;
-    out->next = tl;
-    out->is_end = false;
+    return out;
+}
+
+pval* pval_new_func(pval* parent, void* func){
+    pval* out = malloc(sizeof(pval));
+    if(out){
+        out->value = func;
+        out->type = FUNC;
+        out->next = NULL;
+        out->is_end = true;
+        parent->next = out;
+        parent->is_end = false;
+    }
+
     return out;
 }
 
@@ -165,23 +203,11 @@ int pval_add(pval* parent, void* value, PType ty){
     return 0;
 }
 
-void pval_print(pval* cur) {
-    //write tostring
-    //should parse to string differently for each type
-    if (!cur->is_end) {
-        printf("%d ", cur->value);
-        plist_print(cur->next);
-    } else {
-        printf("%d ", cur->value);
-        printf("\n");
-    }
-}
-
 char* pval_tostring(pval* p){
     if(p->type == BOOL){
-        const bool *b = (bool)p->value;
+        bool b = *(bool*)p->value;
         char* str = malloc(2);
-        if(*b){
+        if(b){
             char* t = "#t";
             strlcpy(str, t, 2);
             return str;
@@ -191,7 +217,7 @@ char* pval_tostring(pval* p){
             return str;
         }
     } else if(p->type == NUM){
-        int num = (int)p->value;
+        int num = *(int*)p->value;
         //when called with NULL and 0 as its first two parameters, snprintf returns how long a string would have to be
         // to hold the converted int
         int length = snprintf(NULL, 0, "%d", num);
@@ -203,32 +229,33 @@ char* pval_tostring(pval* p){
         //strings are already allocated pointers but we're returning a separate allocated pointer just to be sure
         //the caller doesn't mess with the actual pval data
         //allocate memory equal to the base string length + 1, casting the void* to const char* for strlen
-        int len = strlen((*char)p->value) + 1);
+        int len = strlen((char*)p->value) + 1;
         char* str = malloc(len);
-        snprintf(str, len, "%s", (*char)p->value);
+        snprintf(str, len, "%s", (char*)p->value);
         return str;
     } else if(p->type == SYM){
         //symbol is just some set of characters that's been defined to equal something
         //symbols can be part of functions or cells 
         //symbol name should already be a printable string
-        int len = strlen((*char)p->value) + 1);
+        int len = strlen((char*)p->value) + 1;
         char* str = malloc(len);
-        snprintf(str, len, "%s", (*char)p->value);
+        snprintf(str, len, "%s", (char*)p->value);
         return str;
     } else if(p->type == LIST){
-
+        return NULL;
     } else if(p->type == CELL){
-        
+        return NULL;
     } else if(p->type == FUNC){
-        
+        return NULL;
     } else if(p->type == ERR){
-        
+        return NULL;
     } else {
+        return NULL;
         //print error
     }
 }
 
-bool is_string_int(char* input){
+bool is_string_int(char* input, int* output){
     char* endptr = NULL;
     int number = (int)strtol(input, &endptr, 10);
 
@@ -242,6 +269,7 @@ bool is_string_int(char* input){
     }
     //everything went fine, the string is a number
     else{
+        *output = number;
         return true;
     }
 }
@@ -309,7 +337,7 @@ bool is_string_int(char* input){
 //             strlcpy(trimmed_input, input[segment_start], trim_size); //copy the characters within the parens into the allocated string
 
 //             //open a list pval and attach it to the last pval
-//             pval* temp = pval_new();
+//             pval* temp = pval_new_header();
 //             pval* parsed_list = parse_input(trimmed_input, temp);
 //             pval* ls = pval_add(start, parsed_list, PType.LIST);
 //             free(trimmed_input); //once parse_input returns, there's no further need for trimmed_input
@@ -496,7 +524,7 @@ int parse_input(char* input, pval* start){
             strlcpy(trimmed_input, &input[segment_start], trim_size); //copy the characters within the parens into the allocated string
 
             //make a new start pval
-            pval* new_list_start = pval_new();
+            pval* new_list_start = pval_new_header();
             //add a new pval of type LIST to the current chain of pvals with the new start pval as its value
             pval_add(current, new_list_start, LIST);
             //parse the next chunk of string with the new start pval
@@ -511,39 +539,40 @@ int parse_input(char* input, pval* start){
         //check if token is an addition operator, but only assign
         else if(!strcmp(token, "+")){
             printf("operator: +\n");
-            pval_add(current, add, FUNC);
+            pval_new_func(current, add);
+            printf("made new addition pval\n");
             //if op_type is already not 0, there is a problem
             current = pval_next(current);
         }
         //repeat for other operator types
         else if(!strcmp(token, "-")){
             printf("operator: -\n");
-            pval_add(current, subtract, FUNC);
+            pval_new_func(current, subtract);
             current = pval_next(current);
         }
         else if(!strcmp(token, "*")){
             printf("operator: *\n");
-            pval_add(current, multiply, FUNC);
+            pval_new_func(current, multiply);
             current = pval_next(current);
         }
         else if(!strcmp(token, "/")){
             printf("operator: /\n");
-            pval_add(current, divide, FUNC);
+            pval_new_func(current, divide);
             current = pval_next(current);
         }
         else if(is_string_int(token, &str_int_output)){
             printf("New token: %d\n", str_int_output);
-            pval_add(current, &str_int_output, NUM);
+            pval_new_num(current, str_int_output);
             current = pval_next(current);
         }
         else if(!strcmp(token, "#t")){
             bool b = true;
-            pval_add(current, &b, BOOL);
+            pval_new_bool(current, b);
             current = pval_next(current);
         }
         else if(!strcmp(token, "#f")){
             bool b = false;
-            pval_add(current, &b, BOOL);
+            pval_new_bool(current, b);
             current = pval_next(current);
         }
         else if(!strcmp(token, "quit")){
@@ -575,7 +604,11 @@ int main(int argc, char** argv){
     char program_input[4096];
     fgets(program_input, sizeof program_input, input_file);
 
-    parse_input(program_input);
+    pval* start = pval_new_header();
+    int ret_code = parse_input(program_input, start);
+    if(ret_code){
+        printf("There was an error\n");
+    }
     // char* a = "batman";
     // printf("%s\n", &a[2]);
 }
