@@ -26,37 +26,158 @@ typedef struct pval{
     bool is_end;
 } pval;
 
-int add(pval* list, pval* result){
+pval* pval_cons(void* val, PType ty) {
+    pval* out = malloc(sizeof(pval));
+    if(out){
+        out->type = ty;
+        out->value = val;
+        out->next = NULL;
+        out->is_end = false;
+    }
+    return out;
+}
 
+//makes a pval of ambiguous type
+//used for capturing output from PSI func calls
+//all PSI func calls return a pval, but it's unknown to the execution function what type of pval should be returned
+//so this makes one without a set type or value and lets the caller determine those on its own
+pval* pval_new_ambig(){
+    pval* out = malloc(sizeof(pval));
+    out->next = NULL;
+    out->is_end = false;
+}
+
+//deconstruct pval
+void free_pval(pval* p){
+    if(p->next){
+        free_pval(p->next);
+    }
+    free(p->value);
+    free(p);
+}
+
+int add(pval* list, pval* result){
+    //allocate integer for sum
     int* sum = malloc(sizeof(int));
+    if(!sum){
+        return 1;
+    }
+
+    //start at 0 and add everything in the list
+    *sum = 0;
     while(list->is_end == false){
         int* operand = list->value;
         *sum += *sum + *operand;
         list = list->next;
     }
 
-    //need to think about how this should work
-    //result = pval_new_num(NULL, sum);
+    //set output value to sum
+    result->value = sum;
 
     return 0;
 }
 
-int subtract(int* operandA, int* operandB, int* out){
-    *out = *operandA - *operandB;
+int subtract(pval* list, pval* result){
+    //allocate integer for sum
+    int* sum = malloc(sizeof(int));
+    if(!sum){
+        return 1;
+    }
+    //set sum to first number in list
+    *sum = *(int*)list->value;
+    //if the is at least one other element, advance the list counter so we don't subtract the first element from itself
+    if(list->is_end == false){
+        list = list->next;
+    }
+    //subtract everything else from the first number
+    while(list->is_end == false){
+        int* operand = list->value;
+        *sum += *sum - *operand;
+        list = list->next;
+    }
+
+    //set output value to sum
+    result->value = sum;
+
     return 0;
 }
 
-int multiply(int* operandA, int* operandB, int* out){
-    *out = *operandA * *operandB;
+int multiply(pval* list, pval* result){
+    //allocate integer for sum
+    int* sum = malloc(sizeof(int));
+    if(!sum){
+        return 1;
+    }
+    //set sum to first number in list
+    *sum = *(int*)list->value;
+    //if the is at least one other element, advance the list counter so we don't multiply the first element by itself
+    if(list->is_end == false){
+        list = list->next;
+    }
+    //multiply first number by subsequent numbers
+    while(list->is_end == false){
+        int* operand = list->value;
+        *sum += *sum - *operand;
+        list = list->next;
+    }
+
+    result->value = sum;
+
     return 0;
 }
 
-int divide(int* operandA, int* operandB, int* out){
-    *out = *operandA / *operandB;
+int divide(pval* list, pval* result){
+    //allocate integer for sum
+    int* sum = malloc(sizeof(int));
+    if(!sum){
+        return 1;
+    }
+    //set sum to first number in list
+    *sum = *(int*)list->value;
+    //if the is at least one other element, advance the list counter so we don't multiply the first element by itself
+    if(list->is_end == false){
+        list = list->next;
+    }
+    //multiply first number by subsequent numbers
+    while(list->is_end == false){
+        int* operand = list->value;
+        *sum += *sum - *operand;
+        list = list->next;
+    }
+
+    result->value = sum;
+
     return 0;
 }
 
-int compare();
+int equals(pval* list, pval* result){
+    int item1 = *(int*)list->value;
+    if(list->is_end == false){
+        list = list->next;
+    }
+    else{
+        return 1;
+    }
+    int item2 = *(int*)list->value;
+    if(list->is_end == false){
+        return 1;
+    }
+
+    if(item1 == item2){
+        *(result->value) = "#t"
+    }
+    else{
+        *(result->value) = "#f"
+    }
+    return 0;
+}
+
+int quit(){
+    exit(0);
+}
+
+//library of functions
+void* library[6] = {&add, &subtract, &multiply, &divide, &equals, &quit};
 
 //make a new pval meant to serve as the start of a list
 pval* pval_new_header(){
@@ -162,26 +283,6 @@ pval* pval_new_func(pval* parent, void* func){
     }
 
     return out;
-}
-
-pval* pval_cons(void* val, PType ty) {
-    pval* out = malloc(sizeof(pval));
-    if(out){
-        out->type = ty;
-        out->value = val;
-        out->next = NULL;
-        out->is_end = false;
-    }
-    return out;
-}
-
-//deconstruct pval
-void free_pval(pval* p){
-    if(p->next){
-        free_pval(p->next);
-    }
-    free(p->value);
-    free(p);
 }
 
 pval* pval_next(pval* cur) {
@@ -539,7 +640,7 @@ int parse_input(char* input, pval* start){
         //check if token is an addition operator, but only assign
         else if(!strcmp(token, "+")){
             printf("operator: +\n");
-            pval_new_func(current, add);
+            pval_new_func(current, &add);
             printf("made new addition pval\n");
             //if op_type is already not 0, there is a problem
             current = pval_next(current);
@@ -547,17 +648,22 @@ int parse_input(char* input, pval* start){
         //repeat for other operator types
         else if(!strcmp(token, "-")){
             printf("operator: -\n");
-            pval_new_func(current, subtract);
+            pval_new_func(current, &subtract);
             current = pval_next(current);
         }
         else if(!strcmp(token, "*")){
             printf("operator: *\n");
-            pval_new_func(current, multiply);
+            pval_new_func(current, &multiply);
             current = pval_next(current);
         }
         else if(!strcmp(token, "/")){
             printf("operator: /\n");
-            pval_new_func(current, divide);
+            pval_new_func(current, &divide);
+            current = pval_next(current);
+        }
+        else if(!strcmp(token, "=")){
+            printf("operator: =\n");
+            pval_new_func(current, &equals);
             current = pval_next(current);
         }
         else if(is_string_int(token, &str_int_output)){
@@ -587,6 +693,71 @@ int parse_input(char* input, pval* start){
     free(tofree);
     printf("~~~~~ end loop ~~~~~\n");
     return 0;
+}
+
+int execute_list(pval* list){
+    //ok, so we want to read a list and recursively execute everything in it until it returns a final value I guess
+    //need to be able to allocate variables and all kinds of jazz
+    //we need a stack variable outside of everything
+    //or at least something where we can stash allocations of memory
+    //don't really want to pass that around constantly
+    //Should probably declare that in file scope
+    //Otherwise, we need to think about how to read and return values
+    //Want int return for error code stuff
+    //Need to pass in a pval to start with obviously
+    //Start at the top of the pval and consume downwards
+    //Want to read the function and then hand the rest of the pvals in the list to that function
+    //Not too hard, just make an addition function that takes a pval* and then hand off the list item after the function
+    //How to handle internal parentheses though?
+    //Would naturally want to execute that sublist and replace it with a single pval representing the results
+    //But that has to happen as a part of the main execution loop. If we just pass the whole thing to add() or something
+    //the other function won't know what to do with a sublist with its own function calls.
+    //Execution should follow every sublist down and only start actually executing once it hits the bottom level. 
+    //That way every function only sees pvals it knows how to deal with.
+    //So then, what does our execution loop look like?
+    //All lists start with functions, except the empty list, which evaluates to #f.
+    
+    pval* cursor;
+    //expect that provided pval will be of type LIST
+    if(list->type == LIST){
+        //get the actual start of the list
+        pval* start = list->value;
+        //start value should be type START
+        if(start->type == START && start->is_end == false){
+            //start value is empty, so skip ahead again
+            cursor = start->next;
+        }
+        else{
+            return 1;
+        }
+    }
+    else{
+        return 1;
+    }
+
+    //cursor should currently be pointing to a function
+    pval* func;
+
+    //quit has no parameters so make a special carve-out condition for it
+    if(func->value == &quit){
+        quit();
+    }
+
+    if(cursor->type == FUNC && cursor->is_end == false){
+        func = cursor;
+        cursor = cursor->next;
+    }
+    else{
+        return 1;
+    }
+
+    //we can make our execution work by making every function one pval* as input, one pval* as output parameter, and return int for error codes
+    int (*f)(pval*, pval*) = func->value;
+    //make output pointer
+    pval* out = pval_new_ambig();
+    //call with pointer to next 
+    int ret = f(func->next, out);
+    
 }
 
 int main(int argc, char** argv){

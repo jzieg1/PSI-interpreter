@@ -81,7 +81,7 @@ int parse_input(char* input){
     printf("~~~~~ new loop ~~~~~\n");
     printf("Input string: %s\n", input);
     while((token = strsep(&string, " ")) != NULL){
-        int str_int_output; //take output from is_string_int\
+        int str_int_output; //take output from is_string_int
 
         //replace with checks for if the string is a value or paren or whatever
         if(token[0] == '('){
